@@ -8,8 +8,8 @@ from datetime import datetime
 from sentence_transformers import SentenceTransformer
 from pymilvus import connections, utility, FieldSchema, CollectionSchema, DataType, Collection
 
-MILVUS_URI = os.getenv("MILVUS_URI") # Zilliz Cloud URI
-MILVUS_TOKEN = os.getenv("MILVUS_TOKEN") # Zilliz Cloud API Key
+MILVUS_HOST = os.getenv("MILVUS_HOST", "localhost")
+MILVUS_PORT = os.getenv("MILVUS_PORT", "19530")
 COLLECTION_NAME = "documents"
 MODEL_NAME = 'all-MiniLM-L6-v2'
 BATCH_SIZE = 100
@@ -120,10 +120,7 @@ def parse_patents(file_path, limit=TARGET_PATENTS):
 
 def init_milvus():
     print("Connecting to Milvus...")
-    if MILVUS_URI and MILVUS_TOKEN:
-        connections.connect("default", uri=MILVUS_URI, token=MILVUS_TOKEN)
-    else:
-        connections.connect("default", host=MILVUS_HOST, port=MILVUS_PORT)
+    connections.connect("default", host=MILVUS_HOST, port=MILVUS_PORT)
     
     if utility.has_collection(COLLECTION_NAME):
         print(f"Collection {COLLECTION_NAME} exists. Dropping it to start fresh.")

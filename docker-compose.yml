@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   backend:
     build: ./backend
@@ -8,6 +6,7 @@ services:
     environment:
       - MILVUS_HOST=standalone
       - MILVUS_PORT=19530
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
     depends_on:
       - standalone
     volumes:
@@ -22,6 +21,7 @@ services:
       - /app/node_modules
     environment:
       - NUXT_HOST=0.0.0.0
+      - API_BASE_URL=${API_BASE_URL:-http://localhost:8000}
 
   etcd:
     container_name: milvus-etcd
