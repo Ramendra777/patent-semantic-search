@@ -78,16 +78,17 @@ const error = ref(null);
 
 const { public: config } = useRuntimeConfig();
 
-const handleSearch = async ({ query, docType }) => {
+const handleSearch = async ({ query, docType, dateFrom, dateTo, minCitations }) => {
   loading.value = true;
   error.value = null;
   searched.value = true;
   
   try {
     const params = new URLSearchParams({ query });
-    if (docType) {
-      params.append('doc_type', docType);
-    }
+    if (docType) params.append('doc_type', docType);
+    if (dateFrom) params.append('date_from', dateFrom);
+    if (dateTo) params.append('date_to', dateTo);
+    if (minCitations) params.append('min_citations', String(minCitations));
     
     // Using $fetch provided by Nuxt
     const data = await $fetch(`${config.apiBase}/api/search?${params.toString()}`);

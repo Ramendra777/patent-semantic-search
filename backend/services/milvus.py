@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 from pymilvus import connections, Collection
 
 MILVUS_HOST = os.getenv("MILVUS_HOST", "localhost")
@@ -9,7 +10,25 @@ def get_collection():
     connections.connect("default", host=MILVUS_HOST, port=MILVUS_PORT)
     return Collection(COLLECTION_NAME)
 
-def search_documents(query_vector: list[float], limit: int = 50, filters: str = None) -> list[dict]:
+def build_filter_expr(
+    doc_type: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    min_citations: Optional[int] = None,
+) -> Optional[str]:
+    """Build a Milvus boolean filter expression from the provided parameters."""
+    conditions = []
+    if doc_type and doc_type in ["Patent", "Research Paper"]:
+        conditions.append(f"doc_type == '{doc_type}'")
+    if date_from:
+        conditions.append(f"publication_date >= '{date_from}'")
+    if date_to:
+        conditions.append(f"publication_date <= '{date_to}'")
+    if min_citations is not None and min_citations > 0:
+        conditions.append(f"citation_count >= {min_citations}")
+    return " and ".join(conditions) if conditions else None
+
+def search_documents(query_vector: list[float], limit: int = 50, filters: Optional[str] = None) -> list[dict]:
     collection = get_collection()
     collection.load()
     
