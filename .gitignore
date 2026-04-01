@@ -8,3 +8,4 @@ volumes/
 venv/
 .venv/
 g_patent_abstract.tsv/
+g_patent_abstract.tsv/
