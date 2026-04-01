@@ -1,0 +1,5 @@
+pandas
+pymilvus
+sentence-transformers
+requests
+tqdm
