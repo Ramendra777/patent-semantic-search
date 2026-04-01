@@ -1,5 +1,10 @@
 <template>
-  <div class="min-h-screen bg-gray-50 flex flex-col font-sans">
+  <div>
+    <transition enter-active-class="transition duration-500" enter-from-class="opacity-0" enter-to-class="opacity-100" leave-active-class="transition duration-500" leave-from-class="opacity-100" leave-to-class="opacity-0">
+      <HeroSection v-if="showHero" @startSearch="showHero = false" />
+    </transition>
+    
+    <div v-show="!showHero" class="min-h-screen bg-gray-50 flex flex-col font-sans transition-opacity duration-500">
     <header class="bg-white shadow">
       <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
         <h1 class="text-3xl font-bold leading-tight text-gray-900 flex items-center gap-3">
@@ -56,12 +61,15 @@
         <span class="text-gray-600 text-lg font-medium">Analyzing documents...</span>
       </div>
     </main>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref } from 'vue';
+import HeroSection from '~/components/ui/HeroSection.vue';
 
+const showHero = ref(true);
 const loading = ref(false);
 const searched = ref(false);
 const results = ref([]);
