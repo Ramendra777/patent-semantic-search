@@ -1,0 +1,45 @@
+import os
+from pymilvus import connections, Collection
+
+MILVUS_HOST = os.getenv("MILVUS_HOST", "localhost")
+MILVUS_PORT = os.getenv("MILVUS_PORT", "19530")
+COLLECTION_NAME = "documents"
+
+def get_collection():
+    connections.connect("default", host=MILVUS_HOST, port=MILVUS_PORT)
+    return Collection(COLLECTION_NAME)
+
+def search_documents(query_vector: list[float], limit: int = 50, filters: str = None) -> list[dict]:
+    collection = get_collection()
+    collection.load()
+    
+    search_params = {
+        "metric_type": "COSINE",
+        "params": {"nprobe": 10},
+    }
+    
+    results = collection.search(
+        data=[query_vector],
+        anns_field="embedding",
+        param=search_params,
+        limit=limit,
+        expr=filters,
+        output_fields=["doc_id", "title", "abstract", "doc_type", "publication_date", "citation_count"]
+    )
+    
+    docs = []
+    if len(results) > 0:
+        for match in results[0]:
+            doc = {
+                "id": match.id,
+                "distance": match.distance,
+                "doc_id": match.entity.get("doc_id"),
+                "title": match.entity.get("title"),
+                "abstract": match.entity.get("abstract"),
+                "doc_type": match.entity.get("doc_type"),
+                "publication_date": match.entity.get("publication_date"),
+                "citation_count": match.entity.get("citation_count")
+            }
+            docs.append(doc)
+            
+    return docs
