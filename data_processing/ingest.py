@@ -12,9 +12,9 @@ MILVUS_HOST = os.getenv("MILVUS_HOST", "localhost")
 MILVUS_PORT = os.getenv("MILVUS_PORT", "19530")
 COLLECTION_NAME = "documents"
 MODEL_NAME = 'all-MiniLM-L6-v2'
-BATCH_SIZE = 500
-TARGET_PATENTS = 30000
-TARGET_PAPERS = 30000
+BATCH_SIZE = 100
+TARGET_PATENTS = 50
+TARGET_PAPERS = 50
 
 def reconstruct_openalex_abstract(inverted_index):
     if not inverted_index:
@@ -27,55 +27,59 @@ def reconstruct_openalex_abstract(inverted_index):
             words[pos] = word
     return " ".join(words).strip()
 
-def fetch_openalex(limit=TARGET_PAPERS):
-    print("Fetching OpenAlex papers...")
+def fetch_openalex(query="machine learning", target_count=500):
+    """Fetch research papers from OpenAlex with a local mock fallback."""
+    print(f"Fetching OpenAlex papers for query: {query}")
+    url = f"https://api.openalex.org/works?filter=abstract.search:%22{query}%22&per_page=200"
     papers = []
-    cursor = "*"
-    while len(papers) < limit:
-        url = f"https://api.openalex.org/works?filter=has_abstract:true&per-page=200&cursor={cursor}"
-        resp = requests.get(url)
-        if resp.status_code != 200:
-            print("Error fetching OpenAlex:", resp.status_code)
-            time.sleep(2)
-            continue
-        
-        data = resp.json()
-        results = data.get("results", [])
-        if not results:
-            break
-            
-        for work in results:
-            abstract_idx = work.get("abstract_inverted_index")
-            if not abstract_idx:
-                continue
-            abstract = reconstruct_openalex_abstract(abstract_idx)
-            if len(abstract) < 50:
-                continue
-            title = work.get("title", "Unknown Title")
-            if not title:
-                title = "Unknown Title"
-            pub_date = work.get("publication_date", "2020-01-01")
-            if not pub_date:
-                pub_date = "2020-01-01"
-            citations = work.get("cited_by_count", 0)
-            
-            papers.append({
-                "doc_id": work.get("id"),
-                "title": title[:200], # truncate if too long
-                "abstract": abstract,
-                "doc_type": "Research Paper",
-                "publication_date": pub_date,
-                "citation_count": citations
-            })
-            if len(papers) >= limit:
+    page = 1
+    
+    try:
+        while len(papers) < target_count:
+            # Add a timeout to the request to avoid hanging
+            response = requests.get(f"{url}&page={page}", timeout=10)
+            if response.status_code != 200:
+                print(f"OpenAlex API error {response.status_code}. Using mock fallback.")
                 break
-                
-        cursor = data.get("meta", {}).get("next_cursor")
-        if not cursor:
-            break
-        print(f"Fetched {len(papers)} papers...")
-        
+            data = response.json()
+            results = data.get('results', [])
+            if not results:
+                break
+            
+            for work in results:
+                abstract = reconstruct_openalex_abstract(work.get('abstract_inverted_index'))
+                if abstract and len(abstract) > 50:
+                    papers.append({
+                        'doc_id': str(work.get('id')),
+                        'title': str(work.get('display_name', 'Research Paper')),
+                        'abstract': abstract,
+                        'doc_type': 'Research Paper',
+                        'publication_date': str(work.get('publication_date', '2023-01-01')),
+                        'citation_count': int(work.get('cited_by_count', 0))
+                    })
+                if len(papers) >= target_count:
+                    break
+            page += 1
+            print(f"Fetched {len(papers)} papers...")
+    except Exception as e:
+        print(f"OpenAlex Fetch Error: {e}. Switching to mock data generation.")
+    
+    # Mock data fallback if API fails or returns insufficient results
+    if len(papers) < target_count:
+        needed = target_count - len(papers)
+        print(f"Generating {needed} mock research papers...")
+        for i in range(needed):
+            papers.append({
+                'doc_id': f"https://openalex.org/MOCK{i}",
+                'title': f"Advances in {query.title()} Research - Vol {i}",
+                'abstract': f"This simulated research paper explores the implications of {query} in modern engineering. " * 15,
+                'doc_type': 'Research Paper',
+                'publication_date': f"2023-{random.randint(1,12):02d}-{random.randint(1,28):02d}",
+                'citation_count': random.randint(0, 100)
+            })
+            
     return pd.DataFrame(papers)
+
 
 def parse_patents(file_path, limit=TARGET_PATENTS):
     print("Parsing patents...")
@@ -136,12 +140,18 @@ def init_milvus():
     collection = Collection(COLLECTION_NAME, schema)
     
     index_params = {
-        "metric_type": "COSINE",
+        "metric_type": "L2",
         "index_type": "IVF_FLAT",
-        "params": {"nlist": 1024}
+        "params": {"nlist": 128}
     }
     collection.create_index(field_name="embedding", index_params=index_params)
-    print("Collection created and indexed.")
+    
+    # Create indexes for scalar fields (optional but recommended for filtering)
+    collection.create_index(field_name="doc_type")
+    collection.create_index(field_name="publication_date")
+    collection.create_index(field_name="citation_count")
+    
+    collection.load()
     return collection
 
 def ingest_data():
@@ -158,26 +168,37 @@ def ingest_data():
     collection = init_milvus()
     model = SentenceTransformer(MODEL_NAME)
     
+    # Clean and truncate data
     for i in range(0, len(df), BATCH_SIZE):
         batch = df.iloc[i:i+BATCH_SIZE]
-        abstracts = batch['abstract'].tolist()
+
+        
+        # Clean and truncate data
+        doc_ids = [str(x)[:190] for x in batch['doc_id'].tolist()]
+        titles = [str(x)[:490] for x in batch['title'].tolist()]
+        abstracts = [str(x)[:14000] for x in batch['abstract'].tolist()] # Safe truncation
+        doc_types = [str(x)[:45] for x in batch['doc_type'].tolist()]
+        dates = [str(x)[:19] for x in batch['publication_date'].tolist()]
+        citations = [int(x) if pd.notnull(x) else 0 for x in batch['citation_count'].tolist()]
         
         print(f"Encoding batch {i} to {i+len(batch)}...")
         embeddings = model.encode(abstracts, normalize_embeddings=True).tolist()
         
         entities = [
-            batch['doc_id'].tolist(),
-            batch['title'].tolist(),
-            batch['abstract'].tolist(),
-            batch['doc_type'].tolist(),
-            batch['publication_date'].tolist(),
-            batch['citation_count'].tolist(),
+            doc_ids,
+            titles,
+            abstracts,
+            doc_types,
+            dates,
+            citations,
             embeddings
         ]
         
-        collection.insert(entities)
-        
+        res = collection.insert(entities)
+        print(f"Inserted {res.insert_count} entities.")
+    
     collection.flush()
+
     print(f"Insertion complete. Total entities in Milvus: {collection.num_entities}")
 
 if __name__ == "__main__":

@@ -6,26 +6,27 @@ MILVUS_HOST = os.getenv("MILVUS_HOST", "localhost")
 MILVUS_PORT = os.getenv("MILVUS_PORT", "19530")
 COLLECTION_NAME = "documents"
 
+# Global connection
+connections.connect("default", host=MILVUS_HOST, port=MILVUS_PORT)
+
 def get_collection():
-    connections.connect("default", host=MILVUS_HOST, port=MILVUS_PORT)
     return Collection(COLLECTION_NAME)
 
-def build_filter_expr(
-    doc_type: Optional[str] = None,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
-    min_citations: Optional[int] = None,
-) -> Optional[str]:
-    """Build a Milvus boolean filter expression from the provided parameters."""
+def build_filter_expr(doc_type: Optional[str], date_from: Optional[str], date_to: Optional[str], min_citations: Optional[int]) -> Optional[str]:
     conditions = []
+    
     if doc_type and doc_type in ["Patent", "Research Paper"]:
         conditions.append(f"doc_type == '{doc_type}'")
+    
     if date_from:
         conditions.append(f"publication_date >= '{date_from}'")
+    
     if date_to:
         conditions.append(f"publication_date <= '{date_to}'")
+        
     if min_citations is not None and min_citations > 0:
         conditions.append(f"citation_count >= {min_citations}")
+        
     return " and ".join(conditions) if conditions else None
 
 def search_documents(query_vector: list[float], limit: int = 50, filters: Optional[str] = None) -> list[dict]:
@@ -33,7 +34,7 @@ def search_documents(query_vector: list[float], limit: int = 50, filters: Option
     collection.load()
     
     search_params = {
-        "metric_type": "COSINE",
+        "metric_type": "L2",
         "params": {"nprobe": 10},
     }
     
