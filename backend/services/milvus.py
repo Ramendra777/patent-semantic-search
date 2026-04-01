@@ -2,12 +2,17 @@ import os
 from typing import Optional
 from pymilvus import connections, Collection
 
-MILVUS_HOST = os.getenv("MILVUS_HOST", "localhost")
-MILVUS_PORT = os.getenv("MILVUS_PORT", "19530")
+MILVUS_URI = os.getenv("MILVUS_URI") # For Zilliz Cloud
+MILVUS_TOKEN = os.getenv("MILVUS_TOKEN") # For Zilliz Cloud
 COLLECTION_NAME = "documents"
 
 # Global connection
-connections.connect("default", host=MILVUS_HOST, port=MILVUS_PORT)
+if MILVUS_URI and MILVUS_TOKEN:
+    # Connect to Zilliz Cloud
+    connections.connect("default", uri=MILVUS_URI, token=MILVUS_TOKEN)
+else:
+    # Connect to local Milvus
+    connections.connect("default", host=MILVUS_HOST, port=MILVUS_PORT)
 
 def get_collection():
     return Collection(COLLECTION_NAME)
