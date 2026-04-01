@@ -1,0 +1,9 @@
+node_modules
+.output
+.nuxt
+.env
+__pycache__
+*.pyc
+volumes/
+venv/
+.venv/

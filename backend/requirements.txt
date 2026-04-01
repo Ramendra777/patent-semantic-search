@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+pymilvus
+sentence-transformers
+scikit-learn
+pandas
+requests
