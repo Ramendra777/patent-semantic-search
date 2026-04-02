@@ -8,7 +8,8 @@ from datetime import datetime
 from sentence_transformers import SentenceTransformer
 from pymilvus import connections, utility, FieldSchema, CollectionSchema, DataType, Collection
 
-MILVUS_HOST = os.getenv("MILVUS_HOST", "localhost")
+# Use 'milvus-standalone' as default for Docker environment
+MILVUS_HOST = os.getenv("MILVUS_HOST", "milvus-standalone")
 MILVUS_PORT = os.getenv("MILVUS_PORT", "19530")
 COLLECTION_NAME = "documents"
 MODEL_NAME = 'all-MiniLM-L6-v2'
@@ -19,33 +20,27 @@ TARGET_PAPERS = 50
 def reconstruct_openalex_abstract(inverted_index):
     if not inverted_index:
         return ""
-    # inverted_index format: {"word": [positions...], ...}
-    max_pos = max([pos for positions in inverted_index.values() for pos in positions])
-    words = [""] * (max_pos + 1)
-    for word, positions in inverted_index.items():
-        for pos in positions:
-            words[pos] = word
-    return " ".join(words).strip()
+    try:
+        max_pos = max([pos for positions in inverted_index.values() for pos in positions])
+        words = [""] * (max_pos + 1)
+        for word, positions in inverted_index.items():
+            for pos in positions:
+                words[pos] = word
+        return " ".join(words).strip()
+    except:
+        return ""
 
-def fetch_openalex(query="machine learning", target_count=500):
+def fetch_openalex(query="machine learning", target_count=50):
     """Fetch research papers from OpenAlex with a local mock fallback."""
     print(f"Fetching OpenAlex papers for query: {query}")
     url = f"https://api.openalex.org/works?filter=abstract.search:%22{query}%22&per_page=200"
     papers = []
-    page = 1
     
     try:
-        while len(papers) < target_count:
-            # Add a timeout to the request to avoid hanging
-            response = requests.get(f"{url}&page={page}", timeout=10)
-            if response.status_code != 200:
-                print(f"OpenAlex API error {response.status_code}. Using mock fallback.")
-                break
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
             data = response.json()
             results = data.get('results', [])
-            if not results:
-                break
-            
             for work in results:
                 abstract = reconstruct_openalex_abstract(work.get('abstract_inverted_index'))
                 if abstract and len(abstract) > 50:
@@ -59,68 +54,83 @@ def fetch_openalex(query="machine learning", target_count=500):
                     })
                 if len(papers) >= target_count:
                     break
-            page += 1
-            print(f"Fetched {len(papers)} papers...")
     except Exception as e:
-        print(f"OpenAlex Fetch Error: {e}. Switching to mock data generation.")
+        print(f"OpenAlex Fetch Error: {e}")
     
-    # Mock data fallback if API fails or returns insufficient results
     if len(papers) < target_count:
         needed = target_count - len(papers)
         print(f"Generating {needed} mock research papers...")
         for i in range(needed):
             papers.append({
-                'doc_id': f"https://openalex.org/MOCK{i}",
-                'title': f"Advances in {query.title()} Research - Vol {i}",
-                'abstract': f"This simulated research paper explores the implications of {query} in modern engineering. " * 15,
+                'doc_id': f"mock_paper_{i}_{random.randint(1000,9999)}",
+                'title': f"Deep Dive into {query.title()} - Study {i}",
+                'abstract': f"This paper presents a formal analysis of {query} and its applications in automated systems. " * 10,
                 'doc_type': 'Research Paper',
                 'publication_date': f"2023-{random.randint(1,12):02d}-{random.randint(1,28):02d}",
-                'citation_count': random.randint(0, 100)
+                'citation_count': random.randint(5, 150)
             })
             
     return pd.DataFrame(papers)
 
-
 def parse_patents(file_path, limit=TARGET_PATENTS):
-    print("Parsing patents...")
-    if not os.path.exists(file_path):
-        print(f"Patent file not found: {file_path}")
-        return pd.DataFrame()
-        
-    df_iter = pd.read_csv(file_path, sep='\t', chunksize=10000, on_bad_lines='skip', engine='python')
+    print(f"Attempting to parse patents from: {file_path}")
     patents = []
-    for chunk in df_iter:
-        chunk = chunk.dropna(subset=['patent_abstract'])
-        for _, row in chunk.iterrows():
-            abstract = str(row['patent_abstract']).strip()
-            if len(abstract) < 50:
-                continue
-            # Mock title and date since they aren't in the provided subset summary
-            pid = str(row['patent_id'])
-            # Generate a random date between 2000 and 2023 for visualization purposes
-            year = random.randint(2000, 2023)
-            month = random.randint(1, 12)
-            day = random.randint(1, 28)
-            pub_date = f"{year}-{month:02d}-{day:02d}"
+    
+    if os.path.exists(file_path):
+        try:
+            df_iter = pd.read_csv(file_path, sep='\t', chunksize=1000, on_bad_lines='skip', engine='python')
+            for chunk in df_iter:
+                chunk = chunk.dropna(subset=['patent_abstract'])
+                for _, row in chunk.iterrows():
+                    abstract = str(row['patent_abstract']).strip()
+                    if len(abstract) < 50: continue
+                    
+                    pid = str(row['patent_id'])
+                    pub_date = f"{random.randint(2010, 2024)}-{random.randint(1, 12):02d}-{random.randint(1, 28):02d}"
+                    
+                    patents.append({
+                        "doc_id": f"patent_{pid}",
+                        "title": f"Patent Publication US-{pid}-A1",
+                        "abstract": abstract,
+                        "doc_type": "Patent",
+                        "publication_date": pub_date,
+                        "citation_count": random.randint(1, 40)
+                    })
+                    if len(patents) >= limit: break
+                if len(patents) >= limit: break
+        except Exception as e:
+            print(f"Error reading patent file: {e}")
             
+    if len(patents) < limit:
+        needed = limit - len(patents)
+        print(f"Generating {needed} mock patents...")
+        topics = ["machine learning", "neural networks", "autonomous vehicles", "quantum computing", "biotechnology"]
+        for i in range(needed):
+            topic = random.choice(topics)
             patents.append({
-                "doc_id": f"patent_{pid}",
-                "title": f"Patent Authorization {pid}",
-                "abstract": abstract,
+                "doc_id": f"patent_mock_{i}",
+                "title": f"System and Method for {topic.title()} Optimization",
+                "abstract": f"A patented invention describing a novel approach to {topic} using specialized circuitry and algorithmic processing. Facilitates improved efficiency in data-heavy environments. " * 8,
                 "doc_type": "Patent",
-                "publication_date": pub_date,
-                "citation_count": random.randint(0, 50) # Mock citation
+                "publication_date": f"2024-{random.randint(1,3):02d}-{random.randint(1,28):02d}",
+                "citation_count": random.randint(0, 15)
             })
-            if len(patents) >= limit:
-                break
-        if len(patents) >= limit:
-            break
             
     return pd.DataFrame(patents)
 
 def init_milvus():
-    print("Connecting to Milvus...")
-    connections.connect("default", host=MILVUS_HOST, port=MILVUS_PORT)
+    print(f"Connecting to Milvus at {MILVUS_HOST}:{MILVUS_PORT}...")
+    # Add retry logic for connection in docker
+    for attempt in range(5):
+        try:
+            connections.connect("default", host=MILVUS_HOST, port=MILVUS_PORT, timeout=10)
+            print("Connected successfully.")
+            break
+        except Exception as e:
+            print(f"Connection attempt {attempt+1} failed: {e}. Retrying in 5s...")
+            time.sleep(5)
+    else:
+        raise Exception("Could not connect to Milvus after 5 attempts.")
     
     if utility.has_collection(COLLECTION_NAME):
         print(f"Collection {COLLECTION_NAME} exists. Dropping it to start fresh.")
@@ -145,8 +155,6 @@ def init_milvus():
         "params": {"nlist": 128}
     }
     collection.create_index(field_name="embedding", index_params=index_params)
-    
-    # Create indexes for scalar fields (optional but recommended for filtering)
     collection.create_index(field_name="doc_type")
     collection.create_index(field_name="publication_date")
     collection.create_index(field_name="citation_count")
@@ -155,51 +163,45 @@ def init_milvus():
     return collection
 
 def ingest_data():
-    patents_df = parse_patents('../g_patent_abstract.tsv/g_patent_abstract.tsv')
-    papers_df = fetch_openalex()
-    
-    df = pd.concat([patents_df, papers_df], ignore_index=True)
-    if df.empty:
-        print("No data collected.")
-        return
+    # Try various relative paths for the patent file
+    paths_to_try = [
+        'g_patent_abstract.tsv/g_patent_abstract.tsv',
+        '../g_patent_abstract.tsv/g_patent_abstract.tsv',
+        './g_patent_abstract.tsv/g_patent_abstract.tsv'
+    ]
+    patents_df = pd.DataFrame()
+    for p in paths_to_try:
+        patents_df = parse_patents(p)
+        if not patents_df.empty: break
         
-    print(f"Total documents to ingest: {len(df)}")
+    papers_df = fetch_openalex()
+    df = pd.concat([patents_df, papers_df], ignore_index=True)
     
+    print(f"Total documents prepared for ingestion: {len(df)}")
     collection = init_milvus()
+    
+    print("Loading embedding model...")
     model = SentenceTransformer(MODEL_NAME)
     
-    # Clean and truncate data
     for i in range(0, len(df), BATCH_SIZE):
         batch = df.iloc[i:i+BATCH_SIZE]
-
         
-        # Clean and truncate data
         doc_ids = [str(x)[:190] for x in batch['doc_id'].tolist()]
         titles = [str(x)[:490] for x in batch['title'].tolist()]
-        abstracts = [str(x)[:14000] for x in batch['abstract'].tolist()] # Safe truncation
+        abstracts = [str(x)[:14000] for x in batch['abstract'].tolist()]
         doc_types = [str(x)[:45] for x in batch['doc_type'].tolist()]
         dates = [str(x)[:19] for x in batch['publication_date'].tolist()]
         citations = [int(x) if pd.notnull(x) else 0 for x in batch['citation_count'].tolist()]
         
-        print(f"Encoding batch {i} to {i+len(batch)}...")
+        print(f"Encoding batch {i}...")
         embeddings = model.encode(abstracts, normalize_embeddings=True).tolist()
         
-        entities = [
-            doc_ids,
-            titles,
-            abstracts,
-            doc_types,
-            dates,
-            citations,
-            embeddings
-        ]
-        
-        res = collection.insert(entities)
-        print(f"Inserted {res.insert_count} entities.")
+        entities = [doc_ids, titles, abstracts, doc_types, dates, citations, embeddings]
+        collection.insert(entities)
+        print(f"Inserted {len(batch)} entities.")
     
     collection.flush()
-
-    print(f"Insertion complete. Total entities in Milvus: {collection.num_entities}")
+    print(f"Ingestion complete. Total entities in Milvus: {collection.num_entities}")
 
 if __name__ == "__main__":
     ingest_data()

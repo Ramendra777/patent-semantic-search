@@ -24,36 +24,44 @@ Once clustered, the temporal growth (velocity) of each topic is isolated by publ
 
 ## How to Run
 
-1. **Start the Database Infrastructure**:
-   Ensure Docker is installed, then launch Milvus and its dependencies (etcd, minio):
-   ```bash
-   docker-compose up -d etcd minio standalone
-   ```
+### Prerequisites
+- **Docker & Docker Compose**: For running the Milvus vector database.
+- **Python 3.10+**: For the backend and data ingestion.
+- **Node.js 20+**: For the frontend UI.
 
-2. **Ingest Data**:
-   Navigate to the `data_processing` directory, install requirements, and run the ingestion script. Note: This could take some time to download and encode items.
-   ```bash
-   cd data_processing
-   pip install -r requirements.txt
-   python ingest.py
-   ```
+### Step 1: Start the Vector Database
+Launch Milvus and its mandatory dependencies (etcd, minio) using Docker:
+```bash
+docker-compose up -d etcd minio standalone
+```
 
-3. **Start the Backend APIs**:
-   You can either run the FastAPI server via Docker, or locally with Uvicorn:
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   uvicorn main:app --host 0.0.0.0 --port 8000
-   ```
+### Step 2: Seed the Data
+Navigate to the `data_processing` directory to ingest patents and research papers:
+```bash
+cd data_processing
+pip install -r requirements.txt
+python ingest.py
+```
 
-4. **Start the Frontend UI**:
-   Run the Nuxt 3 development server:
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
-   Access the application at `http://localhost:3000`.
+### Step 3: Launch the Backend API
+Start the FastAPI server (it connects to Milvus at `localhost:19530`):
+```bash
+cd backend
+python -m venv venv
+venv\Scripts\activate  # Windows
+# source venv/bin/activate # Linux/Mac
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+```
+
+### Step 4: Launch the Frontend UI
+Start the Nuxt 3 development server:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+Open **[http://localhost:3000](http://localhost:3000)** in your browser to start searching.
 
 ## Assumptions, Challenges, and Trade-offs
 

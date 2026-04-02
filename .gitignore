@@ -1,11 +1,33 @@
-node_modules
-.output
-.nuxt
-.env
-__pycache__
-*.pyc
-volumes/
+# Git Ignore Configuration for Document Search System
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
 venv/
 .venv/
-g_patent_abstract.tsv/
-g_patent_abstract.tsv/
+.env
+
+# Node / Frontend
+node_modules/
+.nuxt/
+.output/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Docker & Database Volumes (DO NOT UPLOAD GIGABYTES OF DATA)
+volumes/
+milvus-data/
+minio-data/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
